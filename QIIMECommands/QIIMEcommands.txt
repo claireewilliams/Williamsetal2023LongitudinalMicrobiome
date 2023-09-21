@@ -1,0 +1,273 @@
+# cluster features for pandas at 0.97
+qiime vsearch cluster-features-de-novo \
+  --i-table redpanda_asvtable.qza \
+  --i-sequences redpanda_repseqs.qza \
+  --p-perc-identity 0.97 \
+  --o-clustered-table redpanda_97otutable.qza \
+  --o-clustered-sequences redpanda_97repseqs.qza
+
+# remove features from Memphis zoo
+qiime feature-table filter-samples \
+--i-table redpanda_97otutable.qza \
+--m-metadata-file redpanda_metadata.tsv \
+--p-where " [Geo] IN ('SCBI')" \
+--o-filtered-table SCBI_redpanda_97otutable.qza
+
+# remove features from SCBI zoo
+qiime feature-table filter-samples \
+--i-table redpanda_97otutable.qza \
+--m-metadata-file redpanda_metadata.tsv \
+--p-where " [Geo] IN ('MEM')" \
+--o-filtered-table MEM_redpanda_97otutable.qza
+
+# retain only Pandas
+qiime feature-table filter-samples \
+--i-table MEM_redpanda_97otutable.qza \
+--m-metadata-file redpanda_metadata.tsv \
+--p-where " [Panda_or_Diet] IN ('Panda')" \
+--o-filtered-table MEM_redpanda_97otutable.qza
+
+# retain only Pandas
+qiime feature-table filter-samples \
+--i-table SCBI_redpanda_97otutable.qza \
+--m-metadata-file redpanda_metadata.tsv \
+--p-where " [Panda_or_Diet] IN ('Panda')" \
+--o-filtered-table SCBI_redpanda_97otutable.qza
+
+# pull out only tiger sequences
+qiime feature-table filter-seqs \
+ --i-data TigerRhinoEle_CW_Run2-rep-seqs.qza \
+--i-table only-tigers-feature-table.qza \
+--o-filtered-data tiger_repseqs.qza
+
+# cluster tiger samples at 0.97
+qiime vsearch cluster-features-de-novo \
+  --i-table tiger_asvtable.qza \
+  --i-sequences tiger_repseqs.qza \
+  --p-perc-identity 0.97 \
+  --o-clustered-table tiger_97otutable.qza \
+  --o-clustered-sequences tiger_97repseqs.qza
+
+# pull out rhino sequences
+qiime feature-table filter-seqs \
+ --i-data RhinoCombo_rep-seqs.qza \
+--i-table rhino_asvtable.qza \
+--o-filtered-data rhino_repseqs.qza
+
+# cluster at 0.97
+qiime vsearch cluster-features-de-novo \
+  --i-table rhino_asvtable.qza \
+  --i-sequences rhino_repseqs.qza \
+  --p-perc-identity 0.97 \
+  --o-clustered-table rhino_97otutable.qza \
+  --o-clustered-sequences rhino_97repseqs.qza
+  
+  
+ # group Rhino replicates 
+qiime feature-table group \
+--i-table  rhino_97otutable.qza \
+--p-axis sample \
+--m-metadata-file rhino_metadata.txt \
+--m-metadata-column "Name_Season" \
+--p-mode mean-ceiling \
+--o-grouped-table rhino_97otutable_grouped.qza
+
+# group Panda replicates 
+qiime feature-table group \
+--i-table  SCBI_redpanda_97otutable.qza \
+--p-axis sample \
+--m-metadata-file redpanda_metadata_collapsing.tsv \
+--m-metadata-column "Name_Season" \
+--p-mode mean-ceiling \
+--o-grouped-table SCBI_redpanda_97otutable_grouped.qza
+
+# group Tiger replicates 
+qiime feature-table group \
+--i-table tiger_97otutable.qza \
+--p-axis sample \
+--m-metadata-file tiger_metadata.tsv \
+--m-metadata-column "Tiger_season" \
+--p-mode mean-ceiling \
+--o-grouped-table tiger_97otutable_grouped.qza
+
+# rhino DEICODE ordination
+qiime deicode rpca \
+    --i-table rhino_97otutable.qza  \
+    --p-min-feature-count 10 \
+    --p-min-sample-count 7000 \
+    --o-biplot DEICODE/97_all_ordination.qza \
+    --o-distance-matrix DEICODE/97_all_distance.qza
+  
+# rhino longitudinal volatility
+qiime longitudinal volatility \
+  --m-metadata-file rhino_metadata.txt \
+  --m-metadata-file DEICODE/97_all_ordination.qza \
+  --p-default-metric 'Axis 1' \
+  --p-default-group-column Individual \
+  --p-state-column Sequence \
+  --p-individual-id-column Individual \
+  --o-visualization DEICODE/97_volatility.qzv
+
+#Rhino Ordination
+qiime emperor biplot \
+    --i-biplot 97_all_ordination.qza  \
+    --m-sample-metadata-file ../rhino_metadata.txt \
+    --m-feature-metadata-file ../rhino_taxonomy.qza  \
+    --o-visualization 97_all_biplot_Deicode.qzv \
+    --p-number-of-features 20 \
+    --p-ignore-missing-samples TRUE
+
+# tiger DEICODE ordination
+qiime deicode rpca \
+    --i-table tiger_97otutable.qza  \
+    --p-min-feature-count 10 \
+    --p-min-sample-count 1000 \
+    --o-biplot DEICODE/97_all_ordination.qza \
+    --o-distance-matrix DEICODE/97_all_distance.qza
+ 
+# tiger longitudinal volatility
+qiime longitudinal volatility \
+  --m-metadata-file tiger_metadata.tsv \
+  --m-metadata-file DEICODE/97_all_ordination.qza \
+  --p-default-metric 'Axis 1' \
+  --p-default-group-column Individual \
+  --p-state-column Sequence \
+  --p-individual-id-column Individual \
+  --o-visualization DEICODE/97_volatility.qzv
+
+#Tiger Ordination
+qiime emperor biplot \
+    --i-biplot 97_all_ordination.qza  \
+    --m-sample-metadata-file ../tiger_metadata.tsv \
+    --m-feature-metadata-file ../tiger_taxonomy.qza  \
+    --o-visualization 97_all_biplot_Deicode.qzv \
+    --p-number-of-features 20 \
+    --p-ignore-missing-samples TRUE
+
+# red panda DEICODE ordination
+qiime deicode rpca \
+    --i-table SCBI_redpanda_97otutable.qza  \
+    --p-min-feature-count 10 \
+    --p-min-sample-count 1000 \
+    --o-biplot DEICODE/SCBI_97_all_ordination.qza \
+    --o-distance-matrix DEICODE/SCBI_97_all_distance.qza
+
+# red panda longitudinal volatility
+qiime longitudinal volatility \
+  --m-metadata-file redpanda_metadata.tsv \
+  --m-metadata-file DEICODE/SCBI_97_all_ordination.qza \
+  --p-default-metric 'Axis 1' \
+  --p-default-group-column Individual \
+  --p-state-column Sequence \
+  --p-individual-id-column Individual \
+  --o-visualization DEICODE/SCBI_97_volatility.qzv
+
+# red panda ordination
+qiime emperor biplot \
+    --i-biplot SCBI_97_all_ordination.qza  \
+    --m-sample-metadata-file ../redpanda_metadata.tsv \
+    --m-feature-metadata-file ../redpanda_taxonomy.qza  \
+    --o-visualization SCBI_97_all_biplot_Deicode.qzv \
+    --p-number-of-features 20 \
+    --p-ignore-missing-samples TRUE
+
+# core metrics for tiger
+qiime diversity core-metrics \
+  --i-table tiger_97otutable.qza \
+  --p-sampling-depth 5000 \
+  --m-metadata-file tiger_metadata.tsv \
+  --output-dir ./97-core-metrics-results
+  
+# run stats on each of these:
+
+qiime diversity alpha-group-significance \
+--i-alpha-diversity evenness_vector.qza \
+--m-metadata-file ../tiger_metadata.tsv   \
+--o-visualization evenness_group-significance.qzv
+&&
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity observed_features_vector.qza \
+  --m-metadata-file ../tiger_metadata.tsv \
+ --o-visualization observed_features_significance.qzv
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix jaccard_distance_matrix.qza \
+--m-metadata-file ../tiger_metadata.tsv \
+--m-metadata-column Season \
+--o-visualization jaccard_season_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix bray_curtis_distance_matrix.qza \
+--m-metadata-file ../tiger_metadata.tsv \
+--m-metadata-column Season \
+--o-visualization bc_season_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity alpha-group-significance \
+--i-alpha-diversity shannon_vector.qza \
+--m-metadata-file ../tiger_metadata.tsv \
+--o-visualization shannon_group-significance.qzv
+
+# core metrics for red panda at each zoo
+qiime diversity core-metrics \
+  --i-table SCBI_redpanda_97otutable.qza \
+  --p-sampling-depth 5000 \
+  --m-metadata-file redpanda_metadata.tsv \
+  --output-dir ./97-core-metrics-results 
+  
+qiime diversity core-metrics \
+  --i-table MEM_redpanda_97otutable.qza \
+  --p-sampling-depth 5000 \
+  --m-metadata-file redpanda_metadata.tsv \
+  --output-dir ./MEM-97-core-metrics-results 
+
+
+# run stats on each of these:
+
+qiime diversity alpha-group-significance \
+--i-alpha-diversity evenness_vector.qza \
+--m-metadata-file ../redpanda_metadata.tsv   \
+--o-visualization evenness_group-significance.qzv
+&&
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity observed_features_vector.qza \
+  --m-metadata-file ../redpanda_metadata.tsv \
+ --o-visualization observed_features_significance.qzv
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix jaccard_distance_matrix.qza \
+--m-metadata-file ../redpanda_metadata.tsv \
+--m-metadata-column Season \
+--o-visualization jaccard_season_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity beta-group-significance \
+--i-distance-matrix bray_curtis_distance_matrix.qza \
+--m-metadata-file ../redpanda_metadata.tsv \
+--m-metadata-column Season \
+--o-visualization bc_season_significance.qzv \
+--p-pairwise 
+&&
+qiime diversity alpha-group-significance \
+--i-alpha-diversity shannon_vector.qza \
+--m-metadata-file ../redpanda_metadata.tsv \
+--o-visualization shannon_group-significance.qzv
+
+
+# combine feature tables for the three species and do core metrics 
+qiime feature-table merge \
+--i-tables RedPanda16S/SCBI_redpanda_97otutable.qza Rhino/rhino_97otutable.qza Tiger/tiger_97otutable.qza \
+--o-merged-table TigerRhinoRedPanda16S_combined/all_97otutable.qza
+ 
+qiime diversity core-metrics \
+  --i-table all_97otutable.qza \
+  --p-sampling-depth 5000 \
+  --m-metadata-file all_metadata.tsv \
+  --output-dir ./97-core-metrics-results
+
+# rarefy feature table
+qiime feature-table rarefy \
+--i-table SCBI_redpanda_97otutable.qza \
+--p-sampling-depth 5000 \
+--o-rarefied-table SCBI_redpanda_97otutable_rarefied.qza

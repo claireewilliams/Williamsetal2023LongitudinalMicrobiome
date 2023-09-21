@@ -1,0 +1,720 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r Libraries}
+library(tidyverse)
+library(qiime2R)
+library(phyloseq)
+library(ggthemes)
+library(RColorBrewer)
+library(vegan)
+library(cowplot)
+library(BEST)
+library(Maaslin2)
+library(microbiomeutilities)
+library(lme4)
+library(nlme)
+library(emmeans)
+library(car)
+library(MASS)
+
+```
+
+
+```{r Colors}
+# select colors for figures
+season.colors <- c("#3D1200","#8F2800","#FF8A5C","#FFC5AD")
+season.colors.gray <- c("#463F3A", "#8A817C", "#BCB8B1", "#E7E4DA")
+season.colors.gray.fall <- c("#3D1200", "#E7E4DA", "#E7E4DA", "#E7E4DA")
+season.colors.gray.winter <- c("#E7E4DA", "#8F2800", "#E7E4DA", "#E7E4DA")
+season.colors.gray.spring <- c("#E7E4DA", "#E7E4DA", "#FF8A5C", "#E7E4DA")
+season.colors.gray.summer <- c("#E7E4DA", "#E7E4DA", "#E7E4DA", "#FFC5AD")
+pandas <- c("#83c17d", "#98cb92", "#cfe7cd", "#BDD684", "#84eaa6", "#cef0b7",
+            "#6fcf94", "#00A388", "#66BB6A")
+ylims.f1 <- ylim(-0.2, 0.2) 
+xlims.f1 <- xlim(-0.2,0.2)
+```
+
+
+```{r RP data input}
+# Load 16S data from red pandas
+data.16Srp <- qza_to_phyloseq("RedPanda16S/redpanda_asvtable.qza",
+                              "RedPanda16S/redpanda_rootedtree.qza",
+                              "RedPanda16S/redpanda_taxonomy.qza",
+                              "RedPanda16S/RedPandaMetadataValidated.tsv")
+
+# load red panda metadata
+metadata.16Srp <- read_tsv("RedPanda16S/RedPandaMetadataValidated.tsv") %>%
+  filter(!row_number() == 1)
+
+```
+
+```{r RP alpha div, beta div}
+# rarefy data to 5000 reads per sample
+data.16Srp.rarefied <- rarefy_even_depth(data.16Srp, rngseed=1, 5000, replace=F)
+
+# remove diet items
+data.16Srp.rarefied.nodiet <-subset_samples(data.16Srp.rarefied, 
+                                            Panda_or_Diet == "Panda")
+
+# remove memphis samples
+data.16Srp.rarefied.nodiet <-subset_samples(data.16Srp.rarefied.nodiet, 
+                                            Geo == "SCBI")
+
+# pull OTU table out of phyloseq object
+otu.table <- data.16Srp.rarefied.nodiet@otu_table@.Data
+
+# Generaate Shannon Diversity box plots
+alpha.div <- diversity(otu.table, index = "shannon") %>%
+  as.data.frame() %>%
+  rownames_to_column("sample-id") %>%
+  rename("Shannon" = shannon) %>%
+  left_join(metadata.16Srp, by = "sample-id") %>%
+  mutate(Season = factor(Season, levels = c("Fall", "Winter", "Spring", "Summer"))) %>%
+  ggplot(aes(x = Season, y = Shannon, fill = Season)) +
+  geom_boxplot() + 
+  theme_few() + 
+  scale_x_discrete(position = "top") +
+  theme(legend.position = "none",
+        axis.title.x=element_blank(),
+        axis.text.x = element_text(size = 14, face = "bold", color = "black"),
+        axis.ticks.x=element_blank(),
+        axis.line.x=element_blank()) +
+  scale_fill_manual(values = season.colors) + 
+  ylim(0,6)
+
+# read in Shannon diversity file 
+data.full<- read_qza("RedPanda16S/97-core-metrics-results/shannon_vector.qza")$data %>%
+  rownames_to_column("sample-id")
+
+# combine metadata and shannon values
+joined_data.full<-left_join(metadata.16Srp, data.full) %>%
+  filter(Geo == "SCBI") %>%
+  filter(Panda_or_Diet == "Panda") %>%
+  filter(!is.na(shannon_entropy))
+
+# linear mixed model for shannon by season
+m1 <- lme(shannon_entropy~Season,random=~1 | Individual,data=joined_data.full)
+anova(m1)
+emmeans(m1, pairwise ~ Season)
+
+# read in the calculated DEICODE ordination
+beta.div.data <- read_qza("RedPanda16S/DEICODE/all_ordination.qza")$data$Vectors %>%
+  rename("sample-id" = "SampleID") %>%
+  left_join(metadata.16Srp, by = "sample-id") %>%
+  mutate(Season = factor(Season, levels = c("Fall", "Winter", "Spring", "Summer")))
+ 
+# Create fall panel for ordination
+beta.div.fall<- beta.div.data %>% 
+  ggplot(aes(x = PC1, y = PC2, color = Season)) +
+  geom_point(size = 3) + 
+  theme_few() + 
+  theme(legend.position = "none") +
+  scale_color_manual(values = season.colors.gray.fall) +
+  xlims.f1 +
+  ylims.f1
+
+# Create winter panel for ordination
+beta.div.winter<- beta.div.data %>% 
+  ggplot(aes(x = PC1, y = PC2, color = Season)) +
+  geom_point(size = 3) + 
+  theme_few() + 
+  theme(legend.position = "none") +
+  scale_color_manual(values = season.colors.gray.winter) +
+  xlims.f1 +
+  ylims.f1
+
+# create spring panel for ordination
+beta.div.spring<- beta.div.data %>% 
+  ggplot(aes(x = PC1, y = PC2, color = Season)) +
+  geom_point(size = 3) + 
+  theme_few() + 
+  theme(legend.position = "none") +
+  scale_color_manual(values = season.colors.gray.spring) +
+  xlims.f1 +
+  ylims.f1
+
+# create summer panel for ordination
+beta.div.summer<- beta.div.data %>% 
+  ggplot(aes(x = PC1, y = PC2, color = Season)) +
+  geom_point(size = 3) + 
+  theme_few() + 
+  theme(legend.position = "none") +
+  scale_color_manual(values = season.colors.gray.summer) +
+  xlims.f1 +
+  ylims.f1
+
+# read in deicode distance matrix and rename columns
+deicode_distance<-read_tsv("RedPanda16S/DEICODE/extracted_distance/0c9eeb99-6c99-4704-a2e4-c8e23ccef498/data/distance-matrix.tsv")
+colnames(deicode_distance) <- c("sample-id", deicode_distance$`...1`)
+
+# join metadata and distance matrix
+metadata_distance <- inner_join(metadata.16Srp, deicode_distance, by = "sample-id")
+
+# create distance object for PERMANOVA
+all_dist<- metadata_distance %>%
+  dplyr::select(all_of(.[["sample-id"]])) %>%
+  as.dist()
+
+# calculate PERMANOVA for DEICODE distance by season
+adonis(all_dist ~ Season, strata = metadata_distance$Individual, data = metadata_distance)
+
+# calculate PERMDISP for DEICODE distance by season
+permdisp<-betadisper(group = metadata_distance$Season, d = all_dist)
+anova(permdisp)
+TukeyHSD(permdisp)
+
+```
+
+
+
+```{r Maaslin2}
+# read in red panda 16S data
+data<-qza_to_phyloseq("RedPanda16S/redpanda_asvtable.qza",
+                              "RedPanda16S/redpanda_rootedtree.qza",
+                              "RedPanda16S/redpanda_taxonomy.qza",
+                              "RedPanda16S/RedPandaMetadataValidated.tsv") 
+
+# rarefy at 5,000 sequences per sample
+data.16Srp.rarefied <- rarefy_even_depth(data, rngseed=1, 5000, replace=F)
+
+# remove diet samples and those from memphis
+data.16Srp.rarefied.nodiet <-subset_samples(data.16Srp.rarefied, 
+                                            Panda_or_Diet == "Panda")
+data.16Srp.rarefied.nodiet <-subset_samples(data.16Srp.rarefied.nodiet, 
+                                            Geo == "SCBI")
+
+# format data to "best hit" (best level of classification)
+data.besthit <- data.16Srp.rarefied.nodiet %>%
+  format_to_besthit()
+
+# pull out asv table from phyloseq object
+asv.table <- data.besthit@otu_table@.Data %>%
+  t()
+
+# read in metadata, rename columns for sample id
+metadata <- read_tsv("RedPanda16S/RedPandaMetadataValidated.tsv") 
+metadata<-metadata[-1,] %>%
+  column_to_rownames("sample-id")
+
+# transform to relative abundance
+ps.besthit.relabund<-transform_sample_counts(data.besthit, function(x) x/sum(x))
+
+# convert phyloseq objects to data frame 
+ps.df <- psmelt(data.besthit)
+ps.relabund.df <- psmelt(ps.besthit.relabund)
+
+# use Maaslin2 to fit the data and determine which species changed relative abundance relative to Winter
+fit_data <- Maaslin2(
+    asv.table, metadata, 'winter_ref',
+    fixed_effects = c('Season'),
+    random_effects = c('Individual'),
+    reference = c("Season,Winter"),
+    standardize = FALSE)
+
+# extract results
+results<-fit_data$results
+
+# filter the results to include a subset of the top 20 most significant comparisons
+results.plot <- results %>%
+  filter(qval < 7.957374e-04) %>%
+  mutate("feature_fixed" = gsub( "X", "", feature))
+
+# format for plotting
+ps.df.relabund.plot <- ps.relabund.df %>%
+  mutate(OTU = as.character(OTU)) %>%
+  mutate(OTU = gsub(":", ".", .$OTU)) %>%
+  mutate(OTU = gsub("-", ".", .$OTU)) %>%
+  filter(OTU %in% results.plot$feature_fixed) %>%# top 20 most significantly different comparisons
+  arrange(OTU)
+
+
+# Make names more readable for plotting
+otus.checked = c()
+list.taxa = c()
+for (i in 1:length(ps.df.relabund.plot$OTU)) {
+  current.otu = ps.df.relabund.plot$OTU[i]
+  if (!(current.otu %in% otus.checked)) {
+    taxa.name = substring(ps.df.relabund.plot$OTU[i], 34)
+    if (taxa.name %in% list.taxa) {
+      taxa.name = paste(taxa.name, "_2", sep = "")
+      list.taxa = c(taxa.name, list.taxa)
+    } 
+    list.taxa = c(taxa.name, list.taxa)
+  } 
+  ps.df.relabund.plot$taxa[i] = taxa.name
+  print(taxa.name)
+  otus.checked = c(current.otu, otus.checked)
+}
+
+for (i in 1:length(ps.df.relabund.plot$taxa)) {
+  if (grepl("__",ps.df.relabund.plot$taxa[i])) {
+     ps.df.relabund.plot$taxa[i] <- substring(ps.df.relabund.plot$taxa[i], 4)
+  }
+}
+ps.df.relabund.plot <- ps.df.relabund.plot %>%
+  mutate("ASV taxonomy" = gsub("_", " ", taxa)) 
+
+# standard error function for line plots
+se <- function(x) sd(x)/sqrt(length(x))
+
+# generate summary dataframe where mean otu abundance by season and standard error are caclulated
+all_summary <- ps.df.relabund.plot %>% 
+        dplyr::group_by(OTU, Season) %>%
+        dplyr::summarise(mean_abund = mean(Abundance, na.rm = T), 
+          std_err = se(Abundance), 
+          max = max(Abundance, na.rm = T),
+          min = min(Abundance, na.rm = T)) 
+
+# join with taxonomy
+all_summary.plot <- ps.df.relabund.plot %>%
+    dplyr::select(OTU, `ASV taxonomy`) %>%
+    distinct() %>%
+    left_join(., all_summary, by = 'OTU') %>%
+    filter(., !(.$`ASV taxonomy` == "JG30.KF.CM45"))
+
+# rename taxa for plotting
+all_summary.plot$`ASV taxonomy` <- gsub("uncultured bacterium", "Sporosarcina", all_summary.plot$`ASV taxonomy`)
+all_summary.plot$`ASV taxonomy` <- gsub("uncultured bacterium 2", "Sporosarcina", all_summary.plot$`ASV taxonomy`)
+all_summary.plot$`ASV taxonomy` <- gsub("\\.", " ", all_summary.plot$`ASV taxonomy`)
+all_summary.plot$`ASV taxonomy` <- gsub("Escherichia Shigella", "Escherichia shigella", all_summary.plot$`ASV taxonomy`)
+all_summary.plot$`ASV taxonomy` <- ifelse(all_summary.plot$OTU == "f1060821e60dafe55849702b53d2e19a.g__Escherichia.Shigella", 
+                                          gsub("Escherichia shigella 2", "Escherichia shigella 3", all_summary.plot$`ASV taxonomy`), all_summary.plot$`ASV taxonomy` )
+
+# plot figure for maaslin, significant changes in taxa across seasons 
+pd <- position_dodge(0.3) 
+fig.maaslin<-ggplot(all_summary.plot, aes(x = factor(Season, levels = c("Fall", "Winter", "Spring", "Summer")), 
+                        y = mean_abund, color = `ASV taxonomy`, group = `ASV taxonomy`)) + 
+  geom_errorbar(aes(ymin = mean_abund - std_err, ymax = mean_abund + std_err), size = 1, width = 0.5, position = pd)+
+  geom_line(position = pd, size = 1) +
+  geom_point(position = pd, size = 3) +
+  theme_few() + 
+  ylab(" Relative abundance") + 
+  xlab("Season") + 
+  scale_color_brewer(palette = "Dark2") + 
+  theme(legend.position = "bottom", legend.text = element_text(face = "italic"), axis.title.x = element_blank(), axis.ticks.x = element_blank(),
+        axis.text.x = element_blank()) 
+
+
+#create plot grids
+top_row<-plot_grid(nrow = 1, ncol = 1, alpha.div, label_size = 18, labels = c("A"))
+middle_row<-plot_grid(nrow = 1, ncol = 4, 
+                      beta.div.fall, 
+                      beta.div.winter,
+                      beta.div.spring,
+                      beta.div.summer,
+                      label_size = 18,
+                      labels = c("B", "C", "D", "E"))
+
+bottom_row<-plot_grid(nrow = 1, ncol = 1, fig.maaslin, label_size = 18, labels = "F")
+
+#plot the title, then top row, bottom row. 
+plot_grid(top_row, middle_row, bottom_row,
+  ncol = 1,
+  nrow = 3,
+  # rel_heights values control vertical title margins
+  rel_heights = c(4,2,4), align = "hv"
+) 
+
+# save figure
+ggsave("Figure1_revisions.png", width = 8, height = 9)
+
+
+```
+
+```{r Figure 2}
+
+# read in metadata
+metadata<- read_tsv("TigerRhinoRedPanda16S_combined/all_metadata.tsv")
+metadata<- metadata[-1,]
+
+# read in feature table
+obs.otus<-read_qza("TigerRhinoRedPanda16S_combined/97-core-metrics-results/observed_features_vector.qza")$data %>%
+  as.data.frame() %>%
+  rownames_to_column("sample-id") %>%
+  left_join(.,metadata)
+
+# rename variables for plotting
+obs.otus$species_f<-ifelse(obs.otus$Species == "Panda", "Red Panda", ifelse( obs.otus$Species == "Tiger", "Tiger", "Rhino"))
+obs.otus$species_f <- factor(obs.otus$species_f, levels = c( "Tiger","Rhino", "Red Panda"))
+obs.otus$Season <- factor(obs.otus$Season, levels = c("Fall", "Winter", "Spring", "Summer"))
+
+# kruskal wallis test, observed otus by species
+kruskal.test(obs.otus$observed_features~obs.otus$species_f)
+
+
+# create observed otus plot
+fig.obs.otus<-obs.otus %>%
+  ggplot(aes(y = species_f, x = log10(observed_features), fill = species_f)) + 
+  geom_boxplot(width = 0.2) + 
+  scale_fill_manual(values = c("#F16913","#66568c", "#ad1a0e")) + 
+  xlab("Log10 Observed OTUs") +
+  theme_few() +
+  ylab("") +
+  theme(legend.position = "none",
+        legend.title = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y =element_blank(),
+        axis.line.y =element_blank(),
+        strip.text.y = element_text(size = 14, face = "bold", color = "black"))
+
+# check for differences in obs otus by animal sex
+animal.sexes <- read_tsv("animal_sexes.txt")
+obs.otus.sex<- obs.otus %>%
+  left_join(., animal.sexes, by = c("Individual" = "individual_1"))
+model<-lm(observed_features~species_f*Sex, obs.otus.sex)
+summary(model)
+
+# plot sex differences amongst species
+fig.obs.otus_sex<-obs.otus %>%
+  left_join(., animal.sexes, by = c("Individual" = "individual_1")) %>%
+  ggplot(aes(y = species_f, x = log10(observed_features), fill = Sex)) + 
+  geom_boxplot(width = 0.2) + 
+  scale_fill_manual(values = c( "#8c267b", "#26378c")) + 
+  xlab("Log10 Observed OTUs") +
+  theme_few() +
+  ylab("") +
+  theme(strip.text.y = element_text(size = 14, face = "bold", color = "black"))
+
+fig.obs.otus_sex
+ggsave("sexdiff_alphadiv_revisions.png")
+
+# read in rhino jaccard results
+rhino.dist<-read_qza("Rhino/97-core-metrics-results-included/jaccard_distance_matrix.qza")$data %>%
+  as.matrix()
+
+# read in rhino metadata and modify
+rhino.md <- read_tsv("Rhino/rhino_metadata.txt")
+rhino.md<-rhino.md[-1,]
+rhino.md<-rhino.md[,-c(5,6)]
+
+# prepare jaccard matrix for plotting
+rhino.df<- rhino.dist %>%
+ as.data.frame() %>%
+  rownames_to_column("sampleid") %>%
+  pivot_longer(cols = -sampleid, names_to ="sample_compared", values_to = "dist") %>%
+  filter(.$dist> 0) 
+names(rhino.md) <- c("sampleid_1", "species","individual_1","season_1")
+rhino.md.1<-rhino.md
+names(rhino.md)<-c("sampleid_2", "species","individual_2","season_2")
+rhino.md.2<-rhino.md
+names(rhino.df) <-c("sampleid_1", "sampleid_2", "dist")
+rhino.plot.data <- rhino.df %>%
+  left_join(.,rhino.md.2, by ="sampleid_2") %>%
+  left_join(.,rhino.md.1, by = "sampleid_1")
+
+# read in red panda jaccard distance matrix
+rp.dist<-read_qza("RedPanda16S/97-core-metrics-results/jaccard_distance_matrix.qza")$data %>%
+  as.matrix()
+
+# read in red panda metadata
+rp.md <- read_tsv("RedPanda16S/RedPandaMetadataValidated.tsv")
+rp.md<-rp.md[-1,]
+rp.md<-rp.md[,-c(5,6,7)]
+
+# prepare jaccard matrix for plotting
+rp.df<- rp.dist %>%
+ as.data.frame() %>%
+  rownames_to_column("sampleid") %>%
+  pivot_longer(cols = -sampleid, names_to ="sample_compared", values_to = "dist") %>%
+  filter(.$dist> 0) 
+names(rp.md) <- c("sampleid_1", "species","individual_1","season_1")
+rp.md.1<-rp.md
+names(rp.md)<-c("sampleid_2", "species","individual_2","season_2")
+rp.md.2<-rp.md
+names(rp.df) <-c("sampleid_1", "sampleid_2", "dist")
+rp.plot.data <- rp.df %>%
+  left_join(.,rp.md.2, by ="sampleid_2") %>%
+  left_join(.,rp.md.1, by = "sampleid_1")
+
+# read in tiger distance matrix
+tiger.dist<-read_qza("Tiger/97-core-metrics-results/jaccard_distance_matrix.qza")$data %>%
+  as.matrix()
+
+# read in tiger metadata and modify
+tiger.md <- read_tsv("Tiger/tiger_metadata.tsv")
+tiger.md<-tiger.md[-1,]
+tiger.md$species <- "Tiger"
+tiger.md<-tiger.md[,c(1,8,2:7)]
+tiger.md<-tiger.md[,-c(4,5,7,8)]
+
+# prepare tiger dataframe for plotting
+tiger.df<- tiger.dist %>%
+ as.data.frame() %>%
+  rownames_to_column("sampleid") %>%
+  pivot_longer(cols = -sampleid, names_to ="sample_compared", values_to = "dist") %>%
+  filter(.$dist> 0) 
+names(tiger.md) <- c("sampleid_1", "species","individual_1","season_1")
+tiger.md.1<-tiger.md
+names(tiger.md)<-c("sampleid_2", "species","individual_2","season_2")
+tiger.md.2<-tiger.md
+names(tiger.df) <-c("sampleid_1", "sampleid_2", "dist")
+tiger.plot.data <- tiger.df %>%
+  left_join(.,tiger.md.2, by ="sampleid_2") %>%
+  left_join(.,tiger.md.1, by = "sampleid_1")
+
+# join tiger, rhino, and red panda data for plotting
+all.plot.data <- rbind(tiger.plot.data, rhino.plot.data, rp.plot.data) %>%
+    mutate(individual_season_2 = paste(individual_2, season_2,sep=""), 
+           individual_season_1 = paste(individual_1, season_1,sep = "")) %>%
+  group_by(individual_season_1,individual_season_2) %>%
+  mutate(mean_individual = mean(dist)) %>%
+  ungroup() %>%
+  mutate(comparison = paste(individual_season_1,individual_season_2, sep = "")) %>%
+  mutate(season_comparison = paste(season_1, season_2, sep = ""))
+ all.plot.data.unique <- all.plot.data[match(unique(all.plot.data$comparison), all.plot.data$comparison),]
+ 
+ # run linear mixed model to compare
+season.comparisons <- c("FallWinter", "WinterSpring","SpringSummer")
+lmm.data<- all.plot.data.unique %>%
+  filter(season_comparison %in% season.comparisons) %>%
+   filter(individual_1 == individual_2) 
+
+lmm<-lmer(dist ~ species.x * season_comparison  + (1 | individual_1), data = lmm.data)
+m1 <- lme(dist~species.x*season_comparison,random=~1 | individual_1,data=lmm.data)
+anova(m1)
+emmeans(m1, pairwise ~ species.x*season_comparison)
+
+# create jaccard figure - turnover between seasons. 
+season.comparisons <- c("FallWinter", "WinterSpring","SpringSummer")
+
+plot.jaccard<-all.plot.data.unique %>%
+  filter(season_comparison %in% season.comparisons) %>%
+   filter(individual_1 == individual_2) %>%
+  mutate("season_comparison_axis" = ifelse(season_comparison == "FallWinter", "Fall/Winter", ifelse(season_comparison == "WinterSpring", "Winter/Spring", "Spring/Summer"))) %>%
+  mutate("season_comparison_f" = factor(season_comparison_axis, levels = c("Fall/Winter", "Winter/Spring","Spring/Summer"))) %>%
+  mutate("species_f" = factor(species.x, levels = c("Rhino", "Panda", "Tiger"))) %>%
+  ggplot(aes(x = season_comparison_f, y = dist, fill = species_f)) + 
+  geom_boxplot(width = 0.5) +
+   # facet_wrap(~species_f, ncol = 1)+
+  scale_fill_manual(values = c( "#66568c", "#ad1a0e", "#F16913")) + 
+  ylab("Jaccard distance within an individual") +
+  theme_few()+
+  xlab("Seasonal turnover") +
+  theme(legend.position = "right",
+        strip.text.x = element_blank(), 
+        legend.title = element_blank())
+
+# plot grid for figure two
+figure_jaccard <- plot_grid(plot.jaccard, labels = c("A"))
+figure_obs.otus<-plot_grid(fig.obs.otus, labels = c("B"), hjust = 0)
+figure_2<-plot_grid(fig.obs.otus, plot.jaccard, labels = c("A", "B"), rel_widths = c(3,8))
+
+# save figure 2
+ggsave("figure2_revisions.png", height = 4, width = 10)
+
+
+# create plot for season comparison by sex
+season.comparisons <- c("FallWinter", "WinterSpring","SpringSummer")
+
+animal.sexes<-read_tsv("animal_sexes.txt")
+sex.differences<-all.plot.data.unique %>%
+  filter(season_comparison %in% season.comparisons) %>%
+   filter(individual_1 == individual_2) %>%
+  left_join(., animal.sexes) %>%
+  mutate("season_comparison_axis" = ifelse(season_comparison == "FallWinter", "Fall/Winter", ifelse(season_comparison == "WinterSpring", "Winter/Spring", "Spring/Summer"))) %>%
+  mutate("season_comparison_f" = factor(season_comparison_axis, levels = c("Fall/Winter", "Winter/Spring","Spring/Summer"))) %>%
+  ggplot(aes(x = season_comparison_f, y = dist, fill = Sex)) + 
+  geom_boxplot(width = 0.5) +
+   # facet_wrap(~species_f, ncol = 1)+
+  scale_fill_manual(values = c( "#8c267b", "#26378c")) + 
+  ylab("Jaccard distance within an individual") +
+  theme_few()+
+  xlab("Seasonal turnover") +
+  theme(legend.position = "right",
+        legend.title = element_blank()) + 
+  facet_grid(~species.x)
+ggsave("sexdiff_revisions.png", height = 4, width = 10)
+
+
+```
+
+```{r Figure 2- supplemental with memphis only}
+
+# read in metadata
+metadata<- read_tsv("TigerRhinoRedPanda16S_combined/all_metadata.tsv")
+metadata<- metadata[-1,]
+
+# read in feature table
+obs.otus<-read_qza("TigerRhinoRedPanda16S_combined/97-withmem-core-metrics-results/observed_features_vector.qza")$data %>%
+  as.data.frame() %>%
+  rownames_to_column("sample-id") %>%
+  left_join(.,metadata) %>%
+  filter(., Species == "Tiger" | Species == "Rhino" | Individual %in% c("Justin", "Pete", "Lucille"))
+
+# rename variables for plotting
+obs.otus$species_f<-ifelse(obs.otus$Species == "Panda", "Red Panda", ifelse( obs.otus$Species == "Tiger", "Tiger", "Rhino"))
+obs.otus$species_f <- factor(obs.otus$species_f, levels = c("Tiger", "Rhino", "Red Panda"))
+obs.otus$Season <- factor(obs.otus$Season, levels = c("Fall", "Winter", "Spring", "Summer"))
+
+kruskal.test(obs.otus$observed_features~obs.otus$species_f)
+
+# create observed otus plot
+fig.obs.otus<-obs.otus %>%
+  ggplot(aes(y = species_f, x = log10(observed_features), fill = species_f)) + 
+  geom_boxplot(width = 0.2) + 
+  scale_fill_manual(values = c("#F16913","#66568c", "#ad1a0e")) + 
+  xlab("Log10 Observed OTUs") +
+  theme_few() +
+  ylab("") +
+  theme(legend.position = "none",
+        legend.title = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y =element_blank(),
+        axis.line.y =element_blank(),
+        strip.text.y = element_text(size = 14, face = "bold", color = "black"))
+
+# kruskal wallis test, observed features by species
+kruskal.test(obs.otus$observed_features~obs.otus$species_f)
+
+# compare observed features by species and sex to determine which predominates
+animal.sexes <- read_tsv("animal_sexes.txt")
+obs.otus.sex<- obs.otus %>%
+  left_join(., animal.sexes, by = c("Individual" = "individual_1"))
+model<-lm(observed_features~species_f*Sex, obs.otus.sex)
+summary(model)
+
+# generate figure for observed otus by sex and species
+fig.obs.otus_sex<-obs.otus %>%
+  left_join(., animal.sexes, by = c("Individual" = "individual_1")) %>%
+  ggplot(aes(y = species_f, x = log10(observed_features), fill = Sex)) + 
+  geom_boxplot(width = 0.2) + 
+  scale_fill_manual(values = c( "#8c267b", "#26378c")) + 
+  xlab("Log10 Observed OTUs") +
+  theme_few() +
+  ylab("") +
+  theme(strip.text.y = element_text(size = 14, face = "bold", color = "black"))
+fig.obs.otus_sex
+ggsave("sexdiff_alphadiv_revisions.png")
+
+
+# read in rhino jaccard results
+rhino.dist<-read_qza("Rhino/97-core-metrics-results-included/jaccard_distance_matrix.qza")$data %>%
+  as.matrix()
+
+# read in rhino metadata and modify
+rhino.md <- read_tsv("Rhino/rhino_metadata.txt")
+rhino.md<-rhino.md[-1,]
+rhino.md<-rhino.md[,-c(5,6)]
+
+# prepare jaccard matrix for plotting
+rhino.df<- rhino.dist %>%
+ as.data.frame() %>%
+  rownames_to_column("sampleid") %>%
+  pivot_longer(cols = -sampleid, names_to ="sample_compared", values_to = "dist") %>%
+  filter(.$dist> 0) 
+names(rhino.md) <- c("sampleid_1", "species","individual_1","season_1")
+rhino.md.1<-rhino.md
+names(rhino.md)<-c("sampleid_2", "species","individual_2","season_2")
+rhino.md.2<-rhino.md
+names(rhino.df) <-c("sampleid_1", "sampleid_2", "dist")
+rhino.plot.data <- rhino.df %>%
+  left_join(.,rhino.md.2, by ="sampleid_2") %>%
+  left_join(.,rhino.md.1, by = "sampleid_1")
+
+# read in red panda jaccard distance matrix
+rp.dist<-read_qza("RedPanda16S/MEM-97-core-metrics-results/jaccard_distance_matrix.qza")$data %>%
+  as.matrix()
+
+# read in red panda metadata
+rp.md <- read_tsv("RedPanda16S/RedPandaMetadataValidated.tsv")
+rp.md<-rp.md[-1,]
+rp.md<-rp.md[,-c(5,6,7)]
+
+# prepare jaccard matrix for plotting
+rp.df<- rp.dist %>%
+ as.data.frame() %>%
+  rownames_to_column("sampleid") %>%
+  pivot_longer(cols = -sampleid, names_to ="sample_compared", values_to = "dist") %>%
+  filter(.$dist> 0) 
+names(rp.md) <- c("sampleid_1", "species","individual_1","season_1")
+rp.md.1<-rp.md
+names(rp.md)<-c("sampleid_2", "species","individual_2","season_2")
+rp.md.2<-rp.md
+names(rp.df) <-c("sampleid_1", "sampleid_2", "dist")
+rp.plot.data <- rp.df %>%
+  left_join(.,rp.md.2, by ="sampleid_2") %>%
+  left_join(.,rp.md.1, by = "sampleid_1")
+
+# read in tiger distance matrix
+tiger.dist<-read_qza("Tiger/97-core-metrics-results/jaccard_distance_matrix.qza")$data %>%
+  as.matrix()
+
+# read in tiger metadata and modify
+tiger.md <- read_tsv("Tiger/tiger_metadata.tsv")
+tiger.md<-tiger.md[-1,]
+tiger.md$species <- "Tiger"
+tiger.md<-tiger.md[,c(1,8,2:7)]
+tiger.md<-tiger.md[,-c(4,5,7,8)]
+
+# prepare tiger dataframe for plotting
+tiger.df<- tiger.dist %>%
+ as.data.frame() %>%
+  rownames_to_column("sampleid") %>%
+  pivot_longer(cols = -sampleid, names_to ="sample_compared", values_to = "dist") %>%
+  filter(.$dist> 0) 
+names(tiger.md) <- c("sampleid_1", "species","individual_1","season_1")
+tiger.md.1<-tiger.md
+names(tiger.md)<-c("sampleid_2", "species","individual_2","season_2")
+tiger.md.2<-tiger.md
+names(tiger.df) <-c("sampleid_1", "sampleid_2", "dist")
+tiger.plot.data <- tiger.df %>%
+  left_join(.,tiger.md.2, by ="sampleid_2") %>%
+  left_join(.,tiger.md.1, by = "sampleid_1")
+
+# join tiger, rhino, and red panda data for plotting
+all.plot.data <- rbind(tiger.plot.data, rhino.plot.data, rp.plot.data) %>%
+    mutate(individual_season_2 = paste(individual_2, season_2,sep=""), 
+           individual_season_1 = paste(individual_1, season_1,sep = "")) %>%
+  group_by(individual_season_1,individual_season_2) %>%
+  mutate(mean_individual = mean(dist)) %>%
+  ungroup() %>%
+  mutate(comparison = paste(individual_season_1,individual_season_2, sep = "")) %>%
+  mutate(season_comparison = paste(season_1, season_2, sep = ""))
+ all.plot.data.unique <- all.plot.data[match(unique(all.plot.data$comparison), all.plot.data$comparison),]
+ 
+ # run linear mixed model to compare
+season.comparisons <- c("FallWinter", "WinterSpring","SpringSummer")
+lmm.data<- all.plot.data.unique %>%
+  filter(season_comparison %in% season.comparisons) %>%
+   filter(individual_1 == individual_2) 
+
+# linearmixed model to compare species by season
+lmm<-lmer(dist ~ species.x * season_comparison  + (1 | individual_1), data = lmm.data)
+summary(lmm)
+confint(lmm)
+
+# plot turnover for species by seasonal transition 
+season.comparisons <- c("FallWinter", "WinterSpring","SpringSummer")
+plot.jaccard<-all.plot.data.unique %>%
+  filter(season_comparison %in% season.comparisons) %>%
+   filter(individual_1 == individual_2) %>%
+  mutate("season_comparison_axis" = ifelse(season_comparison == "FallWinter", "Fall/Winter", ifelse(season_comparison == "WinterSpring", "Winter/Spring", "Spring/Summer"))) %>%
+  mutate("season_comparison_f" = factor(season_comparison_axis, levels = c("Fall/Winter", "Winter/Spring","Spring/Summer"))) %>%
+  mutate("species_f" = factor(species.x, levels = c("Rhino", "Panda", "Tiger"))) %>%
+  ggplot(aes(x = season_comparison_f, y = dist, fill = species_f)) + 
+  geom_boxplot(width = 0.5) +
+   # facet_wrap(~species_f, ncol = 1)+
+  scale_fill_manual(values = c( "#66568c", "#ad1a0e", "#F16913")) + 
+  ylab("Jaccard distance within an individual") +
+  theme_few()+
+  xlab("Seasonal turnover") +
+  theme(legend.position = "right",
+        strip.text.x = element_blank(), 
+        legend.title = element_blank())
+
+# plot grid for figure 2 supplemental
+figure_jaccard <- plot_grid(plot.jaccard, labels = c("A"))
+figure_obs.otus<-plot_grid(fig.obs.otus, labels = c("B"), hjust = 0)
+figure_2<-plot_grid(fig.obs.otus, plot.jaccard, labels = c("A", "B"), rel_widths = c(3,8))
+
+ggsave("figure2_revisions_mem.png", height = 4, width = 10)
+
+
+```
+
+
+
+

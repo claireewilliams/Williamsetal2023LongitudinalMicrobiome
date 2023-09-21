@@ -1,0 +1,390 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r Figure 3 97 OTUs}
+
+# read in rhino volatility file
+ctf.rhino<-read_tsv("Rhino/DEICODE/97_rhino_volatility_included.tsv")
+# clean up data frame
+ctf.rhino<-ctf.rhino[-1,]
+names(ctf.rhino)[7] <- "PC1"
+ctf.rhino$PC1<-as.numeric(ctf.rhino$PC1)
+ctf.rhino$Sequence<-as.numeric(ctf.rhino$Sequence)
+
+# generate z score
+ctf.rhino <- ctf.rhino %>%
+  mutate(zscore = (PC1-mean(PC1))/sd(PC1)) 
+
+# create binary datafrae
+bhm.data<-ctf.rhino %>% 
+  mutate(ones= 1, fill = 0) %>%
+  spread(key = Season, value = ones, fill = 0)
+
+# generate data list
+model_data <- list(individuals = as.numeric(factor(bhm.data$Individual)),
+                   Fall = bhm.data$Fall,
+                   Winter = bhm.data$Winter,
+                   Spring = bhm.data$Spring,
+                   Summer = bhm.data$Summer,
+                   pc1 = bhm.data$zscore, 
+                   N = length(bhm.data$Individual),
+                   N_individuals = length(unique(bhm.data$Individual)))
+
+# write model statement
+rhino_model <-  "model {
+                     for (i in 1:N) {
+                          pc1[i] ~ dnorm(mu[i], sigma)
+                          mu[i] <- 
+                          beta1[individuals[i]] * Fall[i] +
+                          beta2[individuals[i]] * Winter[i] +
+                          beta3[individuals[i]] * Spring[i] +
+                          beta4[individuals[i]] * Summer[i]
+                     }
+                     for(j in 1:N_individuals) {
+                     beta1[j] ~ dnorm(hbmu1, hbsig1)
+                     beta2[j] ~ dnorm(hbmu2, hbsig2)
+                     beta3[j] ~ dnorm(hbmu3, hbsig3)
+                     beta4[j] ~ dnorm(hbmu4, hbsig4)
+                     }
+                    hbmu1 ~ dnorm(0, 0.001)
+                    hbmu2 ~ dnorm(0, 0.001)
+                    hbmu3 ~ dnorm(0, 0.001)
+                    hbmu4 ~ dnorm(0, 0.001)
+                    hbsig1 ~ dgamma(2, 0.1)
+                    hbsig2 ~ dgamma(2, 0.1)
+                    hbsig3 ~ dgamma(2, 0.1)
+                    hbsig4 ~ dgamma(2, 0.1)
+                    sigma ~ dgamma(2, 0.1)
+
+}"
+
+# write txt file
+writeLines(rhino_model, con="sim_model.txt")
+
+# run model
+mod <- jagsUI::jags(data = model_data,
+                    n.adapt = 2000,
+                    n.burnin = 1000,
+                    n.iter = 10000,
+                    n.chains = 4,
+                    modules = "glm",
+                    model.file = "sim_model.txt",
+                    parameters.to.save = c("beta1","hbmu1", "beta2", 
+                                           "beta3", "hbmu2", "hbmu3", "beta4", "hbmu4"),
+                    verbose = TRUE)
+
+# extract coefficients
+plot_dat <- data.frame(genus = c("Fall", "Winter", "Spring", "Summer"),
+                       median = c(median(mod$mean$beta1), 
+                                  median(mod$mean$beta2), 
+                                  median(mod$mean$beta3), 
+                                  median(mod$mean$beta4)),
+                       q2.5 = c(median(mod$q2.5$beta1), 
+                                median(mod$q2.5$beta2), 
+                                median(mod$q2.5$beta3), 
+                                median(mod$q2.5$beta4)),
+                       q97.5 = c(median(mod$q97.5$beta1),
+                                 median(mod$q97.5$beta2), 
+                                 median(mod$q97.5$beta3), 
+                                 median(mod$q97.5$beta4)))
+plot_dat$species <- rep("Rhino")
+
+# read in tiger volatility file
+CTF.16S.tiger<-read_tsv("Tiger/DEICODE/97_tiger_volatility.tsv")
+
+# clean up dataframe
+CTF.16S.tiger<-CTF.16S.tiger[-1,]
+names(CTF.16S.tiger)[8] <- "PC1"
+CTF.16S.tiger$PC1<-as.numeric(CTF.16S.tiger$PC1)
+CTF.16S.tiger$Sequence <- as.numeric(CTF.16S.tiger$Sequence)
+CTF.16S.tiger$Species <- rep("Tiger")
+
+# generate z scores
+CTF.16S.tiger <- CTF.16S.tiger %>%
+  mutate(zscore = (PC1-mean(PC1))/sd(PC1))
+
+# create binary data frame
+bhm.data.tiger<-CTF.16S.tiger %>% 
+  mutate(ones= 1, fill = 0) %>%
+  spread(key = Season, value = ones, fill = 0)
+
+# list data 
+model_data.tiger <- list(individuals = as.numeric(factor(bhm.data.tiger$Individual)),
+                   Fall = bhm.data.tiger$Fall,
+                   Winter = bhm.data.tiger$Winter,
+                   Spring = bhm.data.tiger$Spring,
+                   Summer = bhm.data.tiger$Summer,
+                   pc1 = bhm.data.tiger$zscore, 
+                   N = length(bhm.data.tiger$Individual),
+                   N_individuals = length(unique(bhm.data.tiger$Individual)))
+
+# write model statement
+tiger_model <-  "model {
+                     for (i in 1:N) {
+                          pc1[i] ~ dnorm(mu[i], sigma)
+                          mu[i] <- 
+                          beta1[individuals[i]] * Fall[i] +
+                          beta2[individuals[i]] * Winter[i] +
+                          beta3[individuals[i]] * Spring[i] +
+                          beta4[individuals[i]] * Summer[i]
+                     }
+                     for(j in 1:N_individuals) {
+                     beta1[j] ~ dnorm(hbmu1, hbsig1)
+                     beta2[j] ~ dnorm(hbmu2, hbsig2)
+                     beta3[j] ~ dnorm(hbmu3, hbsig3)
+                     beta4[j] ~ dnorm(hbmu4, hbsig4)
+                     }
+                    hbmu1 ~ dnorm(0, 0.001)
+                    hbmu2 ~ dnorm(0, 0.001)
+                    hbmu3 ~ dnorm(0, 0.001)
+                    hbmu4 ~ dnorm(0, 0.001)
+                    hbsig1 ~ dgamma(2, 0.1)
+                    hbsig2 ~ dgamma(2, 0.1)
+                    hbsig3 ~ dgamma(2, 0.1)
+                    hbsig4 ~ dgamma(2, 0.1)
+                    sigma ~ dgamma(2, 0.1)
+
+}"
+
+# create txt file
+writeLines(tiger_model, con="sim_model.txt")
+
+# run model
+mod <- jagsUI::jags(data = model_data.tiger,
+                    n.adapt = 2000,
+                    n.burnin = 1000,
+                    n.iter = 10000,
+                    n.chains = 4,
+                    modules = "glm",
+                    model.file = "sim_model.txt",
+                    parameters.to.save = c("beta1","hbmu1", "beta2", 
+                                           "beta3", "hbmu2", "hbmu3", "beta4", "hbmu4"),
+                    verbose = TRUE)
+
+# extract coefficients
+plot_dat.tiger <- data.frame(genus = c("Fall", "Winter", "Spring", "Summer"),
+                       median = c(median(mod$mean$beta1), 
+                                  median(mod$mean$beta2), 
+                                  median(mod$mean$beta3), 
+                                  median(mod$mean$beta4)),
+                       q2.5 = c(median(mod$q2.5$beta1), 
+                                median(mod$q2.5$beta2), 
+                                median(mod$q2.5$beta3), 
+                                median(mod$q2.5$beta4)),
+                       q97.5 = c(median(mod$q97.5$beta1),
+                                 median(mod$q97.5$beta2), 
+                                 median(mod$q97.5$beta3), 
+                                 median(mod$q97.5$beta4)))
+
+# plot data from model
+ggplot(data=plot_dat.tiger) +
+  geom_errorbar(aes(factor(genus, levels = c("Fall", "Winter", "Spring", "Summer")), ymin = q2.5, ymax = q97.5), width = 0) +
+  geom_point(aes(genus, median), pch = 21, fill = "gray65") +
+  labs(y="PC1 value") +
+  theme_classic()
+
+plot_dat.tiger$species <- rep("Tiger")
+
+# read in panda volatility
+CTF.16S.panda<-read_tsv("RedPanda16S/DEICODE/SCBI_97_redpanda_volatility.tsv")
+
+# clean up dataframe
+CTF.16S.panda<-CTF.16S.panda[-1,]
+names(CTF.16S.panda)[10] <- "PC1"
+CTF.16S.panda$PC1<-as.numeric(CTF.16S.panda$PC1)
+
+# generate z scores
+CTF.16S.panda <- CTF.16S.panda %>%
+  mutate(zscore = (PC1-mean(PC1))/sd(PC1)) 
+
+# remove individuals that do not have enough sampling
+CTF.16S.panda<-filter(CTF.16S.panda, CTF.16S.panda$Individual != "Angus")
+CTF.16S.panda<-filter(CTF.16S.panda, CTF.16S.panda$Individual != "Rusty")
+CTF.16S.panda<-filter(CTF.16S.panda, CTF.16S.panda$Individual != "Shama")
+CTF.16S.panda<-filter(CTF.16S.panda, CTF.16S.panda$Individual != "Justin")
+
+CTF.16S.panda$Species <- rep("Panda")
+
+# create binary dataframe
+bhm.data.panda<-CTF.16S.panda %>% 
+  mutate(ones= 1, fill = 0) %>%
+  spread(key = Season, value = ones, fill = 0)
+
+# create data list
+model_data.panda <- list(individuals = as.numeric(factor(bhm.data.panda$Individual)),
+                   Fall = bhm.data.panda$Fall,
+                   Winter = bhm.data.panda$Winter,
+                   Spring = bhm.data.panda$Spring,
+                   Summer = bhm.data.panda$Summer,
+                   pc1 = bhm.data.panda$zscore, 
+                   N = length(bhm.data.panda$Individual),
+                   N_individuals = length(unique(bhm.data.panda$Individual)))
+
+# write model statement
+panda_model <-  "model {
+                     for (i in 1:N) {
+                          pc1[i] ~ dnorm(mu[i], sigma)
+                          mu[i] <- 
+                          beta1[individuals[i]] * Fall[i] +
+                          beta2[individuals[i]] * Winter[i] +
+                          beta3[individuals[i]] * Spring[i] +
+                          beta4[individuals[i]] * Summer[i]
+                     }
+                     for(j in 1:N_individuals) {
+                     beta1[j] ~ dnorm(hbmu1, hbsig1)
+                     beta2[j] ~ dnorm(hbmu2, hbsig2)
+                     beta3[j] ~ dnorm(hbmu3, hbsig3)
+                     beta4[j] ~ dnorm(hbmu4, hbsig4)
+                     }
+                    hbmu1 ~ dnorm(0, 0.001)
+                    hbmu2 ~ dnorm(0, 0.001)
+                    hbmu3 ~ dnorm(0, 0.001)
+                    hbmu4 ~ dnorm(0, 0.001)
+                    hbsig1 ~ dgamma(2, 0.1)
+                    hbsig2 ~ dgamma(2, 0.1)
+                    hbsig3 ~ dgamma(2, 0.1)
+                    hbsig4 ~ dgamma(2, 0.1)
+                    sigma ~ dgamma(2, 0.1)
+
+}"
+
+# create text file
+writeLines(panda_model, con="sim_model.txt")
+
+# run model
+mod <- jagsUI::jags(data = model_data.panda,
+                    n.adapt = 2000,
+                    n.burnin = 1000,
+                    n.iter = 10000,
+                    n.chains = 4,
+                    modules = "glm",
+                    model.file = "sim_model.txt",
+                    parameters.to.save = c("beta1","hbmu1", "beta2", 
+                                           "beta3", "hbmu2", "hbmu3", "beta4", "hbmu4"),
+                    verbose = TRUE)
+
+# extract model coefficients
+plot_dat.rp <- data.frame(genus = c("Fall", "Winter", "Spring", "Summer"),
+                       median = c(median(mod$mean$beta1), 
+                                  median(mod$mean$beta2), 
+                                  median(mod$mean$beta3), 
+                                  median(mod$mean$beta4)),
+                       q2.5 = c(median(mod$q2.5$beta1), 
+                                median(mod$q2.5$beta2), 
+                                median(mod$q2.5$beta3), 
+                                median(mod$q2.5$beta4)),
+                       q97.5 = c(median(mod$q97.5$beta1),
+                                 median(mod$q97.5$beta2), 
+                                 median(mod$q97.5$beta3), 
+                                 median(mod$q97.5$beta4)))
+
+plot_dat.rp$species <- rep("RedPanda")
+
+# bind the data from three species for plotting
+all.3 <- rbind(plot_dat, plot_dat.tiger,plot_dat.rp)
+
+# generate dataframes for plotting
+rp.all <- CTF.16S.panda %>%
+  ungroup() %>%
+  dplyr::select(c("Season", "zscore", "Sequence", "Individual")) %>%
+  mutate("Species" = rep("RedPanda"))
+
+tiger.all <- CTF.16S.tiger %>%  
+  ungroup() %>%
+   dplyr::select(c("Season", "zscore", "Sequence", "Individual")) %>%
+  mutate("Species" = rep("Tiger"))
+
+rhino.all <- ctf.rhino %>%
+  ungroup() %>%
+  dplyr::select(c("Season", "zscore", "Sequence", "Individual")) %>%
+  mutate("Species" = rep("Rhino"))
+  
+all <- rbind(rp.all, tiger.all, rhino.all)
+
+# standard error function for plot
+se <- function(x) sqrt(var(x) / length(x))
+
+# summarize data across seasons for plotting
+all_summary <- all %>% 
+        group_by(Species, Season, Individual) %>% 
+        summarise(mean_zscore = mean(zscore), 
+          std_err = se(zscore), 
+          max = max(zscore),
+          min = min(zscore)
+        )
+
+
+pd <- position_dodge(0.3) # move them .05 to the left and right
+
+# generate plot for hierarchical model
+BHM <- ggplot(data=all.3) +
+  geom_errorbar(aes(factor(genus, levels = c("Fall", "Winter", "Spring", "Summer")), 
+                    color = species, ymin = q2.5, ymax = q97.5),  
+                width = .25, position = "dodge", size = 1) +
+  geom_point(aes(genus, median, color = species), position = position_dodge(width = .5), pch = 21, fill = "gray65") +
+  labs(y="PC1 value") +
+  theme_classic() + 
+  facet_wrap(~factor(species, levels = c("Rhino", "RedPanda", "Tiger")))+
+  theme_few() +
+  theme(legend.position = "none",
+        axis.title.x=element_blank(),
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.ticks.x=element_blank(),
+        axis.line.x=element_blank(),
+        strip.text.x = element_blank()) + 
+  ylab("Standardized PC1 Value") +
+  scale_color_manual(values = c("#ad1a0e", "#66568c", "#F16913"))+
+  ylim(-3,2)
+
+# generate data for summary plot
+all_summary.plot <- all_summary %>% 
+  ungroup() %>%
+  mutate(species_num = as.numeric(as.factor(Species))) %>%
+  dplyr::arrange(species_num) %>%
+  mutate(speciesnum_individual = paste(species_num, Individual, sep = "")) %>%
+  mutate(individual_num = as.numeric(as.factor(speciesnum_individual)))
+
+
+colors <-c(brewer.pal(9, "Reds")[-c(1:3)], brewer.pal(6, "Purples")[-1], brewer.pal(6, "Oranges")[-1])
+all_summary.plot$species_f<-ifelse(all_summary.plot$Species == "RedPanda", "Red Panda", ifelse( all_summary.plot$Species == "Tiger", "Tiger", "Rhino"))
+all_summary.plot$species_f <- factor(all_summary.plot$species_f, levels = c("Rhino", "Red Panda", "Tiger"))
+
+# generate individual volatility plot
+Individual.volatility <- ggplot(all_summary.plot, 
+       aes(x = factor(Season, levels = c("Fall", "Winter", "Spring", "Summer")), 
+                        y = mean_zscore, color = speciesnum_individual, group = Individual)) + 
+  geom_errorbar(aes(ymin = mean_zscore - std_err, ymax = mean_zscore + std_err), width = 0.1, position = pd)+
+  geom_line(position = pd) +
+  geom_point(position = pd, size = 3) +
+  facet_grid(~species_f) + 
+  scale_color_manual(values = colors) + 
+  theme_few() +
+  theme(legend.position = "none",
+        axis.title.x=element_blank(),        
+        axis.text.x = element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.line.x=element_blank(),
+        strip.text.x = element_text(size = 14, face = "bold", color = "black")) + 
+  ylab("Standardized PC1 Value") +
+  ylim(-3,2)
+
+top_row<-plot_grid(nrow = 1, ncol = 1, Individual.volatility,label_size = 18, labels = c("A"))
+bottom_row<-plot_grid(nrow = 1, ncol = 1, BHM, label_size = 18, labels = c("B"))
+#plot the second two plots on the bottom row
+
+#plot the title, then top row, bottom row. 
+plot_grid(top_row, bottom_row,
+  ncol = 1,
+  nrow = 2,
+  # rel_heights values control vertical title margins
+  rel_heights = c(2,2), align = "h"
+) 
+
+# save figure
+ggsave("Figure3_redo.png", width = 10, height = 6)
+
+```
+
+

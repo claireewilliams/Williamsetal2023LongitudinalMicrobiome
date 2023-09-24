@@ -172,7 +172,7 @@ TukeyHSD(permdisp)
 
 ```{r Maaslin2}
 # read in red panda 16S data
-data<-qza_to_phyloseq("RedPanda16S/redpanda_asvtable.qza",
+data<-qza_to_phyloseq("RedPanda16S/redpanda_97otutable.qza",
                               "RedPanda16S/redpanda_rootedtree.qza",
                               "RedPanda16S/redpanda_taxonomy.qza",
                               "RedPanda16S/RedPandaMetadataValidated.tsv") 

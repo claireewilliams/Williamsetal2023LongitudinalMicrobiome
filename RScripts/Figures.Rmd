@@ -40,7 +40,7 @@ xlims.f1 <- xlim(-0.2,0.2)
 
 ```{r RP data input}
 # Load 16S data from red pandas
-data.16Srp <- qza_to_phyloseq("RedPanda16S/redpanda_asvtable.qza",
+data.16Srp <- qza_to_phyloseq("RedPanda16S/redpanda_97otutable.qza",
                               "RedPanda16S/redpanda_rootedtree.qza",
                               "RedPanda16S/redpanda_taxonomy.qza",
                               "RedPanda16S/RedPandaMetadataValidated.tsv")
